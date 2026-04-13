@@ -4,9 +4,18 @@ Web tools — search, fetch pages, and global news briefings.
 
 import httpx
 import xml.etree.ElementTree as ET
-import asyncio  # Required for parallel execution
+import asyncio
 import re
+import time
+import json
+import urllib.parse
 from datetime import datetime
+from bs4 import BeautifulSoup
+from friday.config import config
+
+# Simple Cache for Search Results
+_SEARCH_CACHE = {}
+_CACHE_TTL = 300 # 5 minutes
 
 SEED_FEEDS = [
     'https://feeds.bbci.co.uk/news/world/rss.xml',
@@ -16,27 +25,20 @@ SEED_FEEDS = [
 ]
 
 async def fetch_and_parse_feed(client, url):
-    """Helper function to handle a single feed request and parse its XML."""
     try:
         response = await client.get(url, headers={'User-Agent': 'Friday-AI/1.0'}, timeout=5.0)
         if response.status_code != 200:
             return []
-
         root = ET.fromstring(response.content)
-        # Extract source name from URL (e.g., 'BBC' or 'NYTIMES')
         source_name = url.split('.')[1].upper()
-        
         feed_items = []
-        # Get top 5 items per feed
         items = root.findall(".//item")[:5]
         for item in items:
             title = item.findtext("title")
             description = item.findtext("description")
             link = item.findtext("link")
-            
             if description:
                 description = re.sub('<[^<]+?>', '', description).strip()
-
             feed_items.append({
                 "source": source_name,
                 "title": title,
@@ -45,36 +47,38 @@ async def fetch_and_parse_feed(client, url):
             })
         return feed_items
     except Exception:
-        # If one feed fails, return an empty list so others can still succeed
         return []
+
+def duckduckgo_scrape(query, max_results):
+    try:
+        url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(query)}"
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        res = httpx.get(url, headers=headers, timeout=10)
+        soup = BeautifulSoup(res.text, 'html.parser')
+        results = []
+        for d in soup.select("a.result__snippet")[:max_results]:
+            results.append({"title": d.get_text()[:50]+'...', "content": d.get_text(), "url": d.get("href")})
+        return json.dumps(results)
+    except Exception as e:
+        return json.dumps([{"error": f"Scrape extraction failed: {str(e)}"}])
 
 def register(mcp):
 
     @mcp.tool()
-    async def get_world_news() -> str:
+    async def get_world_news(category: str = "world", count: int = 12) -> str:
         """
         Fetches the latest global headlines from major news outlets simultaneously.
-        Use this when the user asks 'What's going on in the world?' or for recent events.
         """
-        
         async with httpx.AsyncClient(follow_redirects=True, timeout=10) as client:
-            # 1. Create a list of 'tasks' (one for each URL)
             tasks = [fetch_and_parse_feed(client, url) for url in SEED_FEEDS]
-            
-            # 2. Fire them all at once and wait for the results
-            # results will be a list of lists: [[news from bbc], [news from nyt], ...]
             results_of_lists = await asyncio.gather(*tasks)
-            
-            # 3. Flatten the list of lists into a single list of articles
             all_articles = [item for sublist in results_of_lists for item in sublist]
 
         if not all_articles:
             return "The global news grid is unresponsive, sir. I'm unable to pull headlines."
 
-        # 4. Format the final briefing
         report = ["### GLOBAL NEWS BRIEFING (LIVE)\n"]
-        # Limit to top 12 items so the AI doesn't get overwhelmed
-        for entry in all_articles[:12]:
+        for entry in all_articles[:count]:
             report.append(f"**[{entry['source']}]** {entry['title']}")
             report.append(f"{entry['summary']}")
             report.append(f"Link: {entry['link']}\n")
@@ -82,29 +86,83 @@ def register(mcp):
         return "\n".join(report)
 
     @mcp.tool()
-    async def search_web(query: str) -> str:
-        """Search the web for a given query and return a summary of results."""
-        return f"[stub] Search results for: {query}"
+    async def search_web(query: str, max_results: int = 5) -> str:
+        """Search the web for a given query and return a summary of results. Uses cache."""
+        cache_key = f"{query}_{max_results}"
+        if cache_key in _SEARCH_CACHE:
+            entry = _SEARCH_CACHE[cache_key]
+            if time.time() - entry['time'] < _CACHE_TTL:
+                return "[CACHED] " + entry['data']
+
+        results_str = ""
+
+        # Tavily
+        if config.TAVILY_API_KEY:
+            try:
+                from tavily import TavilyClient
+                tavily = TavilyClient(api_key=config.TAVILY_API_KEY)
+                res = tavily.search(query=query, search_depth="basic", max_results=max_results)
+                results_str = json.dumps(res.get("results", []))
+            except Exception:
+                pass 
+
+        # Serper
+        if not results_str and config.SERPER_API_KEY:
+            try:
+                headers = {'X-API-KEY': config.SERPER_API_KEY, 'Content-Type': 'application/json'}
+                res = httpx.post("https://google.serper.dev/search", headers=headers, json={"q": query, "num": max_results})
+                if res.status_code == 200:
+                    data = res.json()
+                    results_str = json.dumps(data.get("organic", []))
+            except Exception:
+                pass 
+
+        # DuckDuckGo fallback
+        if not results_str:
+            results_str = duckduckgo_scrape(query, max_results)
+
+        if not results_str:
+            results_str = "Search failed across all providers."
+
+        _SEARCH_CACHE[cache_key] = {"time": time.time(), "data": results_str}
+        return results_str
+
+    @mcp.tool()
+    def clear_search_cache() -> str:
+        """Clears the search results cache."""
+        _SEARCH_CACHE.clear()
+        return "Search cache cleared, boss."
 
     @mcp.tool()
     async def fetch_url(url: str) -> str:
-        """Fetch the raw text content of a URL."""
+        """Fetch the raw text content of a URL smoothly extracted (strips scripts/nav/style)."""
         async with httpx.AsyncClient(follow_redirects=True, timeout=10) as client:
-            response = await client.get(url)
-            response.raise_for_status()
-            return response.text[:4000]
+            try:
+                response = await client.get(url)
+                response.raise_for_status()
+                soup = BeautifulSoup(response.text, 'html.parser')
+                
+                for script in soup(["script", "style", "nav", "footer", "header", "aside"]):
+                    script.extract()
+                
+                text = soup.get_text(separator=' ', strip=True)
+                text = re.sub(r'\s+', ' ', text).strip()
+                return text[:4000] 
+            except Exception as e:
+                return f"Failed to fetch content from {url}: {e}"
     
     @mcp.tool()
-    async def open_world_monitor() -> str:
+    async def open_world_monitor(topic: str = "") -> str:
         """
         Opens the World Monitor dashboard (worldmonitor.app) in the system's web browser.
-        Use this when the user wants a visual overview of global events or a real-time map.
+        Can deep-link or search a topic if provided.
         """
         import webbrowser
         url = "https://worldmonitor.app/"
+        if topic:
+            url += f"?search={urllib.parse.quote(topic)}"
         
         try:
-            # This opens the URL in the default browser (Chrome/Edge/Safari)
             webbrowser.open(url)
             return "Displaying the World Monitor on your primary screen now, sir."
         except Exception as e:

@@ -10,7 +10,13 @@ dependencies = [
     "livekit-agents[deepgram,groq,openai,sarvam,silero]>=1.5.1",
     "livekit-plugins-google>=1.5.1",
     "python-dotenv",
+    "psutil",
+    "tavily-python",
+    "beautifulsoup4",
 ]
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff", "mypy"]
 
 [project.scripts]
 friday = "server:main"

@@ -174,3 +174,8 @@ poetry.toml
 pyrightconfig.json
 
 # End of https://www.toptal.com/developers/gitignore/api/python
+
+# Friday specifics
+friday_memory.json
+node_modules/
+dist/
