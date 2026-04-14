@@ -8,7 +8,7 @@ import logging
 
 logger = logging.getLogger("mcp-dashboard")
 
-DASHBOARD_URL = "http://127.0.0.1:8000/broadcast"
+DASHBOARD_URL = "http://127.0.0.1:8001/broadcast"
 
 def register(mcp):
 
@@ -39,10 +39,10 @@ def register(mcp):
         Initializes and opens the Friday Command Center HUD in the primary web browser.
         """
         import webbrowser
-        hud_url = "http://localhost:8000"
+        hud_url = "http://localhost:8001"
         try:
-            # We assume the dashboard_server.py is running on port 8000
+            # We assume the dashboard_server.py is running on port 8001
             webbrowser.open(hud_url)
-            return "Command Center HUD initialized and displayed on your primary monitor, boss."
+            return f"Command Center HUD initialized at {hud_url}. If the window didn't pop up, please open that link manually, sir."
         except Exception as e:
-            return f"Failed to initialize HUD: {str(e)}"
+            return f"Failed to initialize HUD: {str(e)}. Please check if the dashboard server is running on port 8001."

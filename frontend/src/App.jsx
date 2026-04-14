@@ -91,7 +91,7 @@ export default function App() {
 
   useEffect(() => {
     // Connect to Friday WebSocket
-    const ws = new WebSocket('ws://localhost:8000/ws/friday');
+    const ws = new WebSocket('ws://localhost:8001/ws/friday');
     
     ws.onopen = () => {
       setLogs(prev => [...prev, { time: new Date().toLocaleTimeString(), msg: "SYSTEM: UPLINK ESTABLISHED", type: "system" }]);

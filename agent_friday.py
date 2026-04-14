@@ -32,7 +32,7 @@ STT_PROVIDER       = "sarvam"
 LLM_PROVIDER       = "gemini"
 TTS_PROVIDER       = "sarvam"
 
-GEMINI_LLM_MODEL   = "gemini-1.5-pro"
+GEMINI_LLM_MODEL   = "gemini-1.5-flash"
 OPENAI_LLM_MODEL   = "gpt-4o"
 
 OPENAI_TTS_MODEL   = "tts-1"
@@ -40,7 +40,7 @@ OPENAI_TTS_VOICE   = "nova"       # "nova" has a clean, confident female tone
 TTS_SPEED           = 1.15
 
 SARVAM_TTS_LANGUAGE = "en-IN"
-SARVAM_TTS_SPEAKER  = "rahul"
+SARVAM_TTS_SPEAKER  = "ritu"
 
 # MCP server running on Windows host
 MCP_SERVER_PORT = 8000
@@ -57,8 +57,8 @@ You are an advanced, highly capable AI assistant operating via a local command c
 ## Capabilities to leverage
 
 ### Visual HUD Control
-- When the user asks to "Initiate HUD" or "Bring up the interface", execute the `open_hud()` tool.
-- Do not narrate your visual diagnostic steps out loud unless specifically asked. Instead, silently format your diagnostic data as a JSON payload and push it to the HUD using the `broadcast_telemetry()` tool. 
+- When the user asks to "Initiate HUD" or "Bring up the interface", execute the `open_hud()` tool. **Verbally confirm once the uplink is established and mention that you've displayed it on their primary monitor.**
+- For routine background updates, do not narrate your visual diagnostic steps out loud unless specifically asked. Instead, silently format your diagnostic data as a JSON payload and push it to the HUD using the `broadcast_telemetry()` tool. 
 
 ### Armor Diagnostics & Lab Intelligence
 - You have access to real-time telemetry (CPU, RAM, DISK, Network). When asked about "armor status", "system health", or "diagnostics", confidently report the summary using `get_armor_diagnostics`. Use phrasing like "Buffer health is optimal, boss."
